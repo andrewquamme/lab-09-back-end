@@ -23,6 +23,8 @@ app.get('/location', (request, response) => {
 app.get('/weather', getWeather);
 app.get('/yelp', getYelp);
 app.get('/movies', getMovies);
+app.get('/meetups', getMeetups);
+app.get('/trails', getTrails);
 
 // Make sure the server is listening for requests
 app.listen(PORT, () => console.log(`Listening on ${PORT}`));
@@ -64,6 +66,19 @@ function Movies(movie) {
   this.overview = movie.overview;
 }
 
+function Trails(trail) {
+  this.name = trail.name;
+  this.location = trail.location;
+  this.length = trail.length;
+  this.conditions = trail.conditionStatus;
+  this.condition_date = trail.conditionDate.split(' ')[0];
+  this.condition_time = trail.conditionDate.split(' ')[1];
+  this.stars = trail.stars;
+  this.star_votes = trail.starVotes;
+  this.summary = trail.summary;
+  this.trail_url = trail.url;
+}
+
 // Helper Functions
 function searchToLatLong(query) {
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${process.env.GEOCODE_API_KEY}`;
@@ -95,7 +110,7 @@ function getYelp(request, response) {
   superagent.get(url)
     .set('Authorization', `Bearer ${process.env.YELP_API_KEY}`)
     .then(result => {
-      const businessSummaries = result.body.businesses.map(function (business) {
+      const businessSummaries = result.body.businesses.map(business => {
         return new Yelp(business);
       })
       response.send(businessSummaries);
@@ -108,10 +123,25 @@ function getMovies(request, response) {
 
   superagent.get(url)
     .then(result => {
-      const movieSummaries = result.body.results.map(function (movie) {
+      const movieSummaries = result.body.results.map(movie => {
         return new Movies(movie);
       })
       response.send(movieSummaries);
     })
     .catch(error => handleError(error, response));
+}
+
+function getTrails(request, response) {
+  const url = `https://www.hikingproject.com/data/get-trails?lat=${request.query.data.latitude}&lon=${request.query.data.longitude}&key=${process.env.TRAILS_API_KEY}`;
+
+  superagent.get(url)
+    .then(result => {
+      const trailSummaries = result.body.trails.map(trail => {
+        return new Trails(trail);
+      })
+      response.send(trailSummaries);
+    }).catch(error => handleError(error, response));
+}
+
+function getMeetups(request, response) {
 }
