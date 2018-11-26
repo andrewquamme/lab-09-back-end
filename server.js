@@ -79,6 +79,13 @@ function Trails(trail) {
   this.trail_url = trail.url;
 }
 
+function Meetup(event) {
+  this.link = event.link;
+  this.name = event.name;
+  this.host = event.group.name;
+  this.creation_date = new Date(event.created).toString().slice(0, 15);
+}
+
 // Helper Functions
 function searchToLatLong(query) {
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${process.env.GEOCODE_API_KEY}`;
@@ -140,8 +147,19 @@ function getTrails(request, response) {
         return new Trails(trail);
       })
       response.send(trailSummaries);
-    }).catch(error => handleError(error, response));
+    })
+    .catch(error => handleError(error, response));
 }
 
 function getMeetups(request, response) {
+  const url = `https://api.meetup.com/find/upcoming_events?lat=${request.query.data.latitude}&lon=${request.query.data.longitude}&key=${process.env.MEETUP_API_KEY}`;
+
+  superagent.get(url)
+    .then(result => {
+      const meetupSummaries = result.body.events.map(event => {
+        return new Meetup(event);
+      })
+      response.send(meetupSummaries);
+    })
+    .catch(error => handleError(error, response));
 }
