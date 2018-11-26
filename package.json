@@ -1,0 +1,26 @@
+{
+  "name": "lab-09-back-end",
+  "version": "1.0.0",
+  "description": "Server back end for CF301 Lab 09",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrewquamme/lab-09-back-end.git"
+  },
+  "author": "Andrew Quamme",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/andrewquamme/lab-09-back-end/issues"
+  },
+  "homepage": "https://github.com/andrewquamme/lab-09-back-end#readme",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^6.1.0",
+    "express": "^4.16.4",
+    "superagent": "^4.0.0"
+  }
+}
