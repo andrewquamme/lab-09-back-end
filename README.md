@@ -6,9 +6,9 @@ Estimate of time needed to complete: 1.5 hours
 
 Start time: 12:30
 
-Finish time: _____
+Finish time: 13:15
 
-Actual time needed to complete: _____
+Actual time needed to complete: 45 mins
 ------------------------------------
 Number and name of feature: Feature #2: Retrieve trail information
 
