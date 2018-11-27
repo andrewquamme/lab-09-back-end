@@ -40,6 +40,7 @@ function Location(query, res) {
   this.longitude = res.body.results[0].geometry.location.lng;
   this.created_at = Date.now();
 }
+
 Location.lookupLocation = (location) => {
   const SQL = 'SELECT * FROM locations WHERE search_query=$1;';
   const values = [location.query];
@@ -56,6 +57,7 @@ Location.lookupLocation = (location) => {
     })
     .catch(console.error);
 }
+
 Location.prototype = {
   save: function () {
     const SQL = 'INSERT INTO locations (search_query, formatted_query, latitude, longitude) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id;';
@@ -67,7 +69,7 @@ Location.prototype = {
         return this;
       });
   }
-};
+}
 
 function Weather(day) {
   this.tableName = 'weathers';
@@ -75,9 +77,11 @@ function Weather(day) {
   this.time = new Date(day.time * 1000).toString().slice(0, 15);
   this.created_at = Date.now();
 }
+
 Weather.tableName = 'weathers';
 Weather.lookup = lookup;
 Weather.deleteByLocationId = deleteByLocationId;
+
 Weather.prototype = {
   save: function (location_id) {
     const SQL = `INSERT INTO ${this.tableName} (forecast, time, created_at, location_id) VALUES ($1, $2, $3, $4);`;
@@ -127,9 +131,11 @@ function Trails(trail) {
   this.trail_url = trail.url;
   this.created_at = Date.now();
 }
+
 Trails.tableName = 'trails';
 Trails.lookup = lookup;
 Trails.deleteByLocationId = deleteByLocationId;
+
 Trails.prototype = {
   save: function (location_id) {
     const SQL = `INSERT INTO ${this.tableName} (name, location, length, conditions, condition_date, condition_time, stars, star_votes, summary, trail_url, created_at, location_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);`;
@@ -296,7 +302,9 @@ function getTrails(request, response) {
       return superagent.get(url)
         .then(result => {
           const trailSummaries = result.body.trails.map(trail => {
-            return new Trails(trail);
+            const summary = new Trails(trail);
+            summary.save(request.query.data.id);
+            return summary;
           });
           response.send(trailSummaries)
         })
