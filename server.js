@@ -4,6 +4,7 @@
 const express = require('express');
 const superagent = require('superagent');
 const cors = require('cors');
+const pg = require('pg');
 
 // Load environment variables from .env file
 require('dotenv').config();
@@ -13,13 +14,19 @@ const app = express();
 const PORT = process.env.PORT;
 app.use(cors());
 
-// API Routes
-app.get('/location', (request, response) => {
-  searchToLatLong(request.query.data)
-    .then(location => response.send(location))
-    .catch(error => handleError(error, response));
-})
+// Database Setup
+const client = new pg.Client(process.env.DATABASE_URL);
+client.connect();
+client.on ('error', err => console.error(err));
 
+// API Routes
+// app.get('/location', (request, response) => {
+//   searchToLatLong(request.query.data)
+//     .then(location => response.send(location))
+//     .catch(error => handleError(error, response));
+// })
+
+app.get('/location', getLocation);
 app.get('/weather', getWeather);
 app.get('/yelp', getYelp);
 app.get('/movies', getMovies);
@@ -29,19 +36,46 @@ app.get('/trails', getTrails);
 // Make sure the server is listening for requests
 app.listen(PORT, () => console.log(`Listening on ${PORT}`));
 
-// Error handler
-function handleError(err, res) {
-  console.error(err);
-  if (res) res.status(500).send('Sorry, something went wrong');
-}
+// ++++++++++++++++++++ MODELS ++++++++++++++++++++
 
-// Models
 function Location(query, res) {
+  this.tableName = 'locations';
   this.search_query = query;
   this.formatted_query = res.body.results[0].formatted_address;
   this.latitude = res.body.results[0].geometry.location.lat;
   this.longitude = res.body.results[0].geometry.location.lng;
+  this.created_at = Date.now();
 }
+
+Location.lookupLocation = (location) => {
+  const SQL = 'SELECT * FROM locations WHERE search_query=$1;';
+  const values = [location.query];
+
+  return client.query(SQL, values)
+    .then(result => {
+      if (result.rowCount > 0) {
+        console.log('We have a match for location');
+        location.cacheHit(result);
+      } else {
+        console.log('We do not have a location match');
+        location.cacheMiss()
+      }
+    })
+    .catch(console.error);
+}
+
+Location.prototype = {
+  save: function () {
+    const SQL = 'INSERT INTO locations (search_query, formatted_query, latitude, longitude) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id;';
+    const values = [this.search_query, this.formatted_query, this.latitude, this.longitude];
+
+    return client.query(SQL, values)
+      .then(result => {
+        this.id = result.rows[0].id;
+        return this;
+      });
+  }
+};
 
 function Weather(day) {
   this.forecast = day.summary;
@@ -86,16 +120,39 @@ function Meetup(event) {
   this.creation_date = new Date(event.created).toString().slice(0, 15);
 }
 
-// Helper Functions
-function searchToLatLong(query) {
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${process.env.GEOCODE_API_KEY}`;
+// ++++++++++++++++++++ HELPERS ++++++++++++++++++++
+// These functions are assigned to properties on the models
 
-  return superagent.get(url)
-    .then(res => {
-      return new Location(query, res);
+function lookup(options) {
+  const SQL = `SELECT * FROM ${options.tablename} WHERE location_id=$1;`;
+  const values = [options.location];
+
+  client.query(SQL, values)
+    .then(result => {
+      if (result.rowCount > 0) {
+        options.cacheHit(result);
+      } else {
+        options.cacheMiss();
+      }
     })
     .catch(error => handleError(error));
 }
+
+// Clear the DB data for a location if it is stale
+function deleteByLocationId(table, city) {
+  const SQL = `DELETE from ${table} WHERE location_id=${city};`;
+  return client.query(SQL);
+}
+
+// function searchToLatLong(query) {
+//   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${process.env.GEOCODE_API_KEY}`;
+
+//   return superagent.get(url)
+//     .then(res => {
+//       return new Location(query, res);
+//     })
+//     .catch(error => handleError(error));
+// }
 
 function getWeather(request, response) {
   const url = `https://api.darksky.net/forecast/${process.env.WEATHER_API_KEY}/${request.query.data.latitude},${request.query.data.longitude}`;
@@ -162,4 +219,37 @@ function getMeetups(request, response) {
       response.send(meetupSummaries);
     })
     .catch(error => handleError(error, response));
+}
+
+// ++++++++++++++++++++ HANDLERS ++++++++++++++++++++
+
+function handleError(err, res) {
+  console.error(err);
+  if (res) res.status(500).send('Sorry, something went wrong');
+}
+
+// Location Handler
+function getLocation(request, response) {
+  Location.lookupLocation({
+    tableName: Location.tableName,
+
+    query: request.query.data,
+
+    cacheHit: function (result) {
+      console.log(result.rows[0]);
+      response.send(result.rows[0]);
+    },
+
+    cacheMiss: function () {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${this.query}&key=${process.env.GEOCODE_API_KEY}`;
+
+      return superagent.get(url)
+        .then(result => {
+          const location = new Location(this.query, result);
+          location.save()
+            .then(location => response.send(location));
+        })
+        .catch(error => handleError(error));
+    }
+  })
 }
