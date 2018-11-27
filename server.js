@@ -40,7 +40,6 @@ function Location(query, res) {
   this.longitude = res.body.results[0].geometry.location.lng;
   this.created_at = Date.now();
 }
-
 Location.lookupLocation = (location) => {
   const SQL = 'SELECT * FROM locations WHERE search_query=$1;';
   const values = [location.query];
@@ -57,7 +56,6 @@ Location.lookupLocation = (location) => {
     })
     .catch(console.error);
 }
-
 Location.prototype = {
   save: function () {
     const SQL = 'INSERT INTO locations (search_query, formatted_query, latitude, longitude) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id;';
@@ -77,11 +75,9 @@ function Weather(day) {
   this.time = new Date(day.time * 1000).toString().slice(0, 15);
   this.created_at = Date.now();
 }
-
 Weather.tableName = 'weathers';
 Weather.lookup = lookup;
 Weather.deleteByLocationId = deleteByLocationId;
-
 Weather.prototype = {
   save: function (location_id) {
     const SQL = `INSERT INTO ${this.tableName} (forecast, time, created_at, location_id) VALUES ($1, $2, $3, $4);`;
@@ -109,6 +105,14 @@ function Movies(movie) {
   this.overview = movie.overview;
 }
 
+
+function Meetup(event) {
+  this.link = event.link;
+  this.name = event.name;
+  this.host = event.group.name;
+  this.creation_date = new Date(event.created).toString().slice(0, 15);
+}
+
 function Trails(trail) {
   this.tableName = 'trails';
   this.name = trail.name;
@@ -123,12 +127,16 @@ function Trails(trail) {
   this.trail_url = trail.url;
   this.created_at = Date.now();
 }
+Trails.tableName = 'trails';
+Trails.lookup = lookup;
+Trails.deleteByLocationId = deleteByLocationId;
+Trails.prototype = {
+  save: function (location_id) {
+    const SQL = `INSERT INTO ${this.tableName} (name, location, length, conditions, condition_date, condition_time, stars, star_votes, summary, trail_url, created_at, location_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);`;
+    const values = [this.name, this.location, this.length, this.conditions, this.condition_date, this.condition_time, this.stars, this.star_votes, this.summary, this.trail_url, this.created_at, location_id];
 
-function Meetup(event) {
-  this.link = event.link;
-  this.name = event.name;
-  this.host = event.group.name;
-  this.creation_date = new Date(event.created).toString().slice(0, 15);
+    client.query(SQL, values);
+  }
 }
 
 // ++++++++++++++++++++ HELPERS ++++++++++++++++++++
@@ -184,18 +192,6 @@ function getMovies(request, response) {
     .catch(error => handleError(error, response));
 }
 
-function getTrails(request, response) {
-  const url = `https://www.hikingproject.com/data/get-trails?lat=${request.query.data.latitude}&lon=${request.query.data.longitude}&key=${process.env.TRAILS_API_KEY}`;
-
-  superagent.get(url)
-    .then(result => {
-      const trailSummaries = result.body.trails.map(trail => {
-        return new Trails(trail);
-      })
-      response.send(trailSummaries);
-    })
-    .catch(error => handleError(error, response));
-}
 
 function getMeetups(request, response) {
   const url = `https://api.meetup.com/find/upcoming_events?lat=${request.query.data.latitude}&lon=${request.query.data.longitude}&key=${process.env.MEETUP_API_KEY}`;
@@ -271,6 +267,38 @@ function getWeather(request, response) {
             return summary;
           });
           response.send(weatherSummaries);
+        })
+        .catch(error => handleError(error, response));
+    }
+  })
+}
+
+// Trails Handler
+function getTrails(request, response) {
+  Trails.lookup({
+    tableName: Trails.tableName,
+
+    location: request.query.data.id,
+
+    cacheHit: function (result) {
+      let ageOfResultsInMinutes = (Date.now() - result.rows[0].created_at) / (1000 * 60);
+      if (ageOfResultsInMinutes > 30) {
+        Trails.deleteByLocationId(Trails.tableName, request.query.data.id);
+        this.cacheMiss();
+      } else {
+        response.send(result.rows);
+      }
+    },
+
+    cacheMiss: function () {
+      const url = `https://www.hikingproject.com/data/get-trails?lat=${request.query.data.latitude}&lon=${request.query.data.longitude}&key=${process.env.TRAILS_API_KEY}`;
+
+      return superagent.get(url)
+        .then(result => {
+          const trailSummaries = result.body.trails.map(trail => {
+            return new Trails(trail);
+          });
+          response.send(trailSummaries)
         })
         .catch(error => handleError(error, response));
     }
