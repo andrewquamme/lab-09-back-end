@@ -20,12 +20,6 @@ client.connect();
 client.on ('error', err => console.error(err));
 
 // API Routes
-// app.get('/location', (request, response) => {
-//   searchToLatLong(request.query.data)
-//     .then(location => response.send(location))
-//     .catch(error => handleError(error, response));
-// })
-
 app.get('/location', getLocation);
 app.get('/weather', getWeather);
 app.get('/yelp', getYelp);
@@ -78,8 +72,23 @@ Location.prototype = {
 };
 
 function Weather(day) {
+  this.tableName = 'weathers';
   this.forecast = day.summary;
   this.time = new Date(day.time * 1000).toString().slice(0, 15);
+  this.created_at = Date.now();
+}
+
+Weather.tableName = 'weathers';
+Weather.lookup = lookup;
+Weather.deleteByLocationId = deleteByLocationId;
+
+Weather.prototype = {
+  save: function (location_id) {
+    const SQL = `INSERT INTO ${this.tableName} (forecast, time, created_at, location_id) VALUES ($1, $2, $3, $4);`;
+    const values = [this.forecast, this.time, this.created_at, location_id];
+
+    client.query(SQL, values);
+  }
 }
 
 function Yelp(business) {
@@ -101,6 +110,7 @@ function Movies(movie) {
 }
 
 function Trails(trail) {
+  this.tableName = 'trails';
   this.name = trail.name;
   this.location = trail.location;
   this.length = trail.length;
@@ -111,6 +121,7 @@ function Trails(trail) {
   this.star_votes = trail.starVotes;
   this.summary = trail.summary;
   this.trail_url = trail.url;
+  this.created_at = Date.now();
 }
 
 function Meetup(event) {
@@ -124,14 +135,16 @@ function Meetup(event) {
 // These functions are assigned to properties on the models
 
 function lookup(options) {
-  const SQL = `SELECT * FROM ${options.tablename} WHERE location_id=$1;`;
+  const SQL = `SELECT * FROM ${options.tableName} WHERE location_id=$1;`;
   const values = [options.location];
 
   client.query(SQL, values)
     .then(result => {
       if (result.rowCount > 0) {
+        console.log(options.tableName, options.location, 'Hit');
         options.cacheHit(result);
       } else {
+        console.log(options.tableName, options.location, 'Miss');
         options.cacheMiss();
       }
     })
@@ -142,30 +155,6 @@ function lookup(options) {
 function deleteByLocationId(table, city) {
   const SQL = `DELETE from ${table} WHERE location_id=${city};`;
   return client.query(SQL);
-}
-
-// function searchToLatLong(query) {
-//   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${process.env.GEOCODE_API_KEY}`;
-
-//   return superagent.get(url)
-//     .then(res => {
-//       return new Location(query, res);
-//     })
-//     .catch(error => handleError(error));
-// }
-
-function getWeather(request, response) {
-  const url = `https://api.darksky.net/forecast/${process.env.WEATHER_API_KEY}/${request.query.data.latitude},${request.query.data.longitude}`;
-
-  superagent.get(url)
-    .then(result => {
-      const weatherSummaries = result.body.daily.data.map(day => {
-        return new Weather(day);
-      });
-
-      response.send(weatherSummaries);
-    })
-    .catch(error => handleError(error, response));
 }
 
 function getYelp(request, response) {
@@ -250,6 +239,40 @@ function getLocation(request, response) {
             .then(location => response.send(location));
         })
         .catch(error => handleError(error));
+    }
+  })
+}
+
+// Weather Handler
+function getWeather(request, response) {
+  Weather.lookup({
+    tableName: Weather.tableName,
+
+    location: request.query.data.id,
+
+    cacheHit: function (result) {
+      let ageOfResultsInMinutes = (Date.now() - result.rows[0].created_at) / (1000 * 60);
+      if (ageOfResultsInMinutes > 30) {
+        Weather.deleteByLocationId(Weather.tableName, request.query.data.id);
+        this.cacheMiss();
+      } else {
+        response.send(result.rows);
+      }
+    },
+
+    cacheMiss: function () {
+      const url = `https://api.darksky.net/forecast/${process.env.WEATHER_API_KEY}/${request.query.data.latitude},${request.query.data.longitude}`;
+
+      return superagent.get(url)
+        .then(result => {
+          const weatherSummaries = result.body.daily.data.map(day => {
+            const summary = new Weather(day);
+            summary.save(request.query.data.id);
+            return summary;
+          });
+          response.send(weatherSummaries);
+        })
+        .catch(error => handleError(error, response));
     }
   })
 }
